@@ -1,0 +1,10 @@
+[server] UDP optimized mode listening on port 54322 (run=E_stress_8_optimized_rep1)
+[server] join 127.0.0.1:62398 -> id=1
+[server] join 127.0.0.1:49914 -> id=2
+[server] join 127.0.0.1:58861 -> id=3
+[server] join 127.0.0.1:49601 -> id=4
+[server] join 127.0.0.1:49691 -> id=5
+[server] join 127.0.0.1:64811 -> id=6
+[server] join 127.0.0.1:49349 -> id=7
+[server] join 127.0.0.1:49919 -> id=8
+[server] stopping.
