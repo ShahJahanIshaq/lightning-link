@@ -19,6 +19,7 @@ struct HudInputs {
     std::string   mode_label        = "optimized";
     bool          prediction_enabled = true;
     bool          interpolation_enabled = true;
+    bool          window_focused    = true;   // for the (window inactive) HUD hint
 };
 
 std::vector<std::string> build_hud_lines(const HudInputs& h);

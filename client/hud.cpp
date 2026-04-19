@@ -12,6 +12,7 @@ std::vector<std::string> build_hud_lines(const HudInputs& h) {
         std::ostringstream o;
         o << "Lightning Link  |  mode=" << h.mode_label
           << "  pid=" << h.local_player_id;
+        if (!h.window_focused) o << "   (window inactive: click to focus)";
         line(o.str());
     }
     {

@@ -68,7 +68,11 @@ struct Conditioner {
     }
 };
 
-InputSnapshot poll_keyboard_b() {
+InputSnapshot poll_keyboard_b(const sf::RenderWindow* w) {
+    // Same rationale as the optimized client: without this focus check both
+    // SFML client processes running on the same machine would receive identical
+    // key events because sf::Keyboard::isKeyPressed is a global OS-level query.
+    if (w == nullptr || !w->hasFocus()) return InputSnapshot{};
     InputSnapshot s{};
     using K = sf::Keyboard::Key;
     if (sf::Keyboard::isKeyPressed(K::Left)  || sf::Keyboard::isKeyPressed(K::A)) s.mx = -1;
@@ -262,7 +266,8 @@ int run_baseline_client(const ClientConfig& cfg) {
 
         // Input at 60 Hz, enqueued through the outbound conditioner.
         if (now >= next_input) {
-            InputSnapshot in = has_bot ? bot.poll(elapsed) : poll_keyboard_b();
+            InputSnapshot in = has_bot ? bot.poll(elapsed)
+                                       : poll_keyboard_b(renderer.is_open() ? renderer.window() : nullptr);
             std::ostringstream line;
             line << "IN " << next_seq << ' ' << int(in.mx) << ' ' << int(in.my) << '\n';
             std::string s = line.str();
@@ -299,6 +304,7 @@ int run_baseline_client(const ClientConfig& cfg) {
                 rp.id = id; rp.pos = p.pos; rp.is_local = (id == my_pid);
                 to_draw.push_back(rp);
             }
+            hud.window_focused = renderer.is_open() && renderer.window() && renderer.window()->hasFocus();
             hud.snapshots_received = 0;
             hud.inputs_sent = inputs_sent;
             hud.bytes_received = bytes_rx;

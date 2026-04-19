@@ -145,3 +145,33 @@ still conforms exactly to the spec's column list.
 Both are logged; both are plotted. The perceived delay is the headline
 figure because it captures the user-visible benefit of prediction,
 which is the central claim in the research objective.
+
+## 12. Ablation CLI flags and deep-analysis matrices
+
+**Spec**: one evaluation matrix (five conditions x two modes).
+
+**Extension**: added three opt-in orchestration scripts
+(`tools/run_isolation.sh`, `tools/run_loss_sweep.sh`,
+`tools/run_scale_sweep.sh`) plus `--mode isolation|loss|scale` in the
+analyzer. The isolation matrix relies on two new client flags,
+`--disable-prediction` and `--disable-interpolation`, which pin the F3/F4
+toggles off at startup and record the variant name in the per-input CSV's
+`mode` column. These flags are purely instrumentation - they do not alter
+any protocol, tick rate, or existing code path when absent.
+
+**Why**: the main matrix answers "optimized vs baseline overall" but the
+report needs to attribute measured gains to individual optimizations
+(transport, serialization, prediction, interpolation). The ablation runs
+make this attribution quantitative rather than narrative.
+
+## 13. Keyboard input gated on window focus
+
+**Spec**: does not discuss multi-window input isolation.
+
+**Fix**: `sf::Keyboard::isKeyPressed` is a global OS-level query and would
+drive every local client from the same keystroke stream. The keyboard
+poll in both the optimized and baseline clients now returns a zero input
+when the SFML window is absent or unfocused. Running two local clients
+side by side now behaves as expected: only the focused window's player
+moves. A HUD line annotates the state ("window inactive") when the poll
+is suppressed so the user knows why their input is being ignored.

@@ -36,13 +36,24 @@ lightning-link/
 │                    # network receiver thread, bot driver, HUD, baseline TCP
 ├── tools/
 │   ├── run_experiments.sh   # 5 conditions x 2 modes x N reps orchestrator
-│   └── analyze.py           # CSV -> summary.csv + PNG figures
+│   ├── run_isolation.sh     # per-optimization ablation at 100 ms RTT
+│   ├── run_loss_sweep.sh    # delay-tail behaviour vs packet loss
+│   ├── run_scale_sweep.sh   # bandwidth/payload vs player count
+│   ├── run_all.sh           # one-shot: all four matrices + analysis
+│   └── analyze.py           # --mode main|isolation|loss|scale
 ├── docs/
 │   ├── project_specification.md    # verbatim mirror of the original spec
 │   ├── deviations.md               # deliberate improvements over the spec
+│   ├── architecture.md             # mermaid diagrams + source-to-figure index
 │   └── results_interpretation.md   # report scaffold, filled from measured data
-├── experiments/     # generated raw per-run CSVs
-├── results/         # generated summary CSV + figures
+├── experiments/           # main matrix raw CSVs
+├── experiments_isolation/ # isolation matrix raw CSVs (opt-in)
+├── experiments_loss/      # loss sweep raw CSVs (opt-in)
+├── experiments_scale/     # scale sweep raw CSVs (opt-in)
+├── results/               # main matrix figures + summary
+├── results_isolation/     # isolation decomposition figure
+├── results_loss/          # loss-tolerance figures
+├── results_scale/         # scaling figures
 └── logs/            # live tail logs from manual runs
 ```
 
@@ -135,13 +146,67 @@ python3 -m venv .venv && .venv/bin/pip install pandas matplotlib numpy
 
 Outputs:
 
-- `results/summary.csv`       — mean and 95% CI per (condition, mode)
-- `results/per_run.csv`       — raw per-run aggregates
-- `results/fig1_perceived_delay.png`      — headline responsiveness chart
-- `results/fig1b_ack_latency.png`         — wire RTT comparison
-- `results/fig2_bandwidth.png`            — bandwidth per client
-- `results/fig3_stability.png`            — snapshot arrival coefficient of variation
-- `results/fig4_perceived_vs_latency.png` — perceived delay as latency scales
+- `results/summary.csv`                    — mean and 95% CI per (condition, mode)
+- `results/per_run.csv`                    — raw per-run aggregates
+- `results/fig0_wire_vs_perceived.png`     — headline wire-vs-perceived contrast
+- `results/fig1_perceived_delay.png`       — perceived responsiveness (broken out)
+- `results/fig1b_ack_latency.png`          — wire RTT (broken out)
+- `results/fig2_bandwidth.png`             — bandwidth per client
+- `results/fig3_stability.png`             — snapshot arrival CV (secondary)
+- `results/fig3b_arrival_gap_percentiles.png` — p50/p95/p99 of inter-snapshot gaps
+- `results/fig4_perceived_vs_latency.png`  — perceived delay as latency scales
+- `results/fig6_ack_latency_cdf.png`       — ack latency CDF (appendix)
+
+## Deep analysis (opt-in)
+
+The main matrix tells you "optimized vs baseline overall". For a report-grade
+breakdown that attributes the gain to individual optimizations, run one or
+more of the following sub-matrices. Each is independent and can be skipped.
+
+To run the entire report pack in one command (main + all three deep matrices,
+followed by all four analyzer invocations):
+
+```bash
+DURATION_SEC=60 REPS=3 tools/run_all.sh
+```
+
+### Isolation matrix (which optimization contributes how much)
+
+Fixes latency at 100 ms RTT and runs five variants: baseline, UDP+binary
+only, + prediction, + interpolation, + both. Produces `fig5_isolation_decomp.png`.
+
+```bash
+DURATION_SEC=30 REPS=3 tools/run_isolation.sh
+.venv/bin/python tools/analyze.py --mode isolation
+```
+
+The two relevant client flags introduced for this matrix are
+`--disable-prediction` and `--disable-interpolation`. Both can be set
+manually for demos.
+
+### Packet-loss sweep (tail behaviour under loss)
+
+Holds latency at 100 ms and sweeps loss across {0, 1, 3, 5, 10}%. Produces
+`fig9_loss_delay_tail.png` and `fig10_snapshot_jitter_cv.png`.
+
+```bash
+DURATION_SEC=30 REPS=3 tools/run_loss_sweep.sh
+.venv/bin/python tools/analyze.py --mode loss
+```
+
+### Scale sweep (bandwidth vs player count)
+
+Clean network; N in {1, 2, 4, 6, 8}. Produces `fig7_bytes_per_snapshot.png`
+(measured vs analytical `7 + 22*N`) and `fig8_bandwidth_scaling.png`.
+
+```bash
+DURATION_SEC=30 REPS=3 tools/run_scale_sweep.sh
+.venv/bin/python tools/analyze.py --mode scale
+```
+
+Refer to [docs/architecture.md](docs/architecture.md) for a mermaid-diagram
+walkthrough and to [docs/results_interpretation.md](docs/results_interpretation.md)
+for the report-ready interpretation of every figure.
 
 ## Explanation of the two modes
 

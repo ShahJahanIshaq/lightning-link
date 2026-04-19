@@ -13,7 +13,8 @@ static void usage(const char* argv0) {
         "Usage: %s [--server=HOST] [--port=N] [--tcp-port=N] [--mode=optimized|baseline]\n"
         "          [--run-label=STR] [--log-dir=PATH] [--duration=SECONDS]\n"
         "          [--bot=circle|sine|random|zigzag] [--bot-seed=N] [--headless]\n"
-        "          [--add-latency=MS] [--jitter=MS] [--loss=PCT] [--seed=N]\n",
+        "          [--add-latency=MS] [--jitter=MS] [--loss=PCT] [--seed=N]\n"
+        "          [--disable-prediction] [--disable-interpolation]\n",
         argv0);
 }
 
@@ -46,6 +47,8 @@ int main(int argc, char** argv) {
         else if (parse_kv(a, "jitter", v))     cfg.lagcfg.jitter_ms = std::stoi(v);
         else if (parse_kv(a, "loss", v))       cfg.lagcfg.loss_prob = std::stod(v) / 100.0;
         else if (parse_kv(a, "seed", v))       cfg.lagcfg.seed = std::stoull(v);
+        else if (a == "--disable-prediction")    cfg.disable_prediction = true;
+        else if (a == "--disable-interpolation") cfg.disable_interpolation = true;
         else if (a == "--help" || a == "-h")   { usage(argv[0]); return 0; }
         else { std::fprintf(stderr, "unknown arg: %s\n", a.c_str()); usage(argv[0]); return 2; }
     }

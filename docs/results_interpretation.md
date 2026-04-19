@@ -14,19 +14,35 @@ observation to a component of the optimized architecture.
 The central claim of the project is that client-side prediction decouples
 perceived user responsiveness from the underlying network round-trip time.
 
-`results/fig4_perceived_vs_latency.png` plots perceived input-to-visible
-delay against simulated added RTT for both modes:
+The single most important figure in the report is
+`results/fig0_wire_vs_perceived.png`. Per condition it plots four bars:
+baseline wire RTT, baseline perceived delay, optimized wire RTT, optimized
+perceived delay. The pattern is identical in every condition:
 
-- Baseline scales linearly with RTT (approximately 1:1 slope): perceived
-  delay is dominated by the full wire round trip.
-- Optimized remains flat near zero independent of RTT: prediction applies
-  the input to the local state before the authoritative snapshot is even
-  requested.
+- The two **wire RTT** bars are essentially equal. Both modes traverse the
+  same simulated network, hit the same server tick quantization, and
+  acknowledge via the same field (`last_processed_input_seq`). There is no
+  wire-level shortcut in the optimized path - about 1-2 ms of difference is
+  attributable to the smaller binary payload.
+- The two **perceived delay** bars diverge dramatically. Baseline perceived
+  delay tracks wire RTT (because the local player only moves when the
+  authoritative state arrives). Optimized perceived delay is pinned at zero
+  because client-side prediction responds on the current render frame.
 
-At a representative 100 ms round-trip condition (B_lat100, 2 clients, the
-typical trans-Atlantic use case), the report should cite the exact values
-from `summary.csv` for `mean_perceived_ms` in each mode, together with the
-95 % confidence intervals (`perceived_ci95_ms`).
+This is the core thesis in a single chart: *we did not build a faster
+network, we built a renderer that no longer has to wait for the network.*
+`results/fig4_perceived_vs_latency.png` is the companion that shows the
+same story as a function of added RTT (the optimized line stays flat at
+zero; the baseline line follows y = x + constant).
+
+`results/fig1_perceived_delay.png` and `results/fig1b_ack_latency.png`
+remain in the set as the "broken out" versions of fig0 for readers who
+want to see each metric on its own axes.
+
+At 100 ms added RTT (B_lat100), the report should cite:
+- perceived delay: ~0 ms optimized vs ~130 ms baseline
+- wire RTT:       ~131 ms optimized vs ~132 ms baseline
+with 95% confidence intervals from `summary.csv`.
 
 ## 2. Bandwidth efficiency
 
@@ -50,18 +66,51 @@ multiple bytes in ASCII but a constant small number of bytes in binary.
 
 ## 3. Snapshot delivery stability
 
-`results/fig3_stability.png` plots the coefficient of variation of
-snapshot arrival intervals.
+Two figures address this question. `results/fig3b_arrival_gap_percentiles.png`
+is the primary one and should be referenced in the report;
+`results/fig3_stability.png` (coefficient of variation) is kept as a
+secondary view.
 
-Both modes stay near the same baseline under clean conditions because
-the send cadence is identical (20 Hz). Under the packet-loss condition
-(D_lat100_loss3), the optimized path shows a slightly higher CV because
-dropped UDP snapshots are not retransmitted — the gap in arrivals is
-absorbed by the interpolation buffer, at the cost of a brief visual
-lag but without stalling the game state. In the baseline path, TCP
-retransmits mask the loss but introduce head-of-line blocking which
-does not clearly appear on localhost; on a WAN this would reverse and
-penalise the baseline further. The report should include this caveat.
+### 3a. Arrival gap percentiles (fig3b)
+
+This figure plots the p50, p95, and p99 of the time gap between
+consecutive snapshot arrivals, per mode per condition. Gap percentiles
+map directly to the user experience: p95 is "how bad does it get one
+update out of twenty", p99 is "the worst hitch in a hundred updates".
+CV averages those over all the good gaps and hides exactly the events
+that hurt.
+
+Expected pattern, visible in the produced figure:
+
+- p50 is pinned at 50 ms for both modes in every condition. This is the
+  20 Hz nominal cadence (1000 ms / 20 = 50 ms). A p50 of 50 ms means
+  "half the time the next update arrives exactly on cadence".
+- p95 stays within a few ms of p50 when there is no loss, because UDP
+  jitter at localhost scale is small and TCP line-by-line delivery is
+  essentially serialised at the 20 Hz server cadence.
+- p99 doubles to ~100 ms under D_lat100_loss3. That is the expected
+  response to a single dropped snapshot: the next update is two cadence
+  periods away. Both modes see this because both clients simulate loss
+  the same way. The difference is what happens **after** the gap - the
+  optimized client's interpolation buffer had 100 ms of runway, so the
+  user sees a brief extrapolation rather than a visible freeze; the
+  baseline has nothing and visibly stalls.
+
+The chart also draws a dashed line at 50 ms (the nominal cadence) so
+the reader can see at a glance how close each mode's p50 is to the
+theoretical minimum.
+
+### 3b. CV (fig3, secondary)
+
+`fig3_stability.png` plots the coefficient of variation of inter-tick
+snapshot arrivals. Both modes stay near the same baseline under clean
+conditions because the send cadence is identical. CV can sometimes look
+*worse* for optimized than baseline, and the report should address this
+directly: it happens because the TCP client's software conditioner
+applies a fixed-latency delay with no jitter, while the UDP `LaggedSocket`
+introduces a small per-datagram variance. A higher wire-level CV in the
+optimized path is not a user-visible effect because the interpolation
+buffer absorbs it - which is precisely what fig3b is designed to show.
 
 ## 4. Motion smoothness and interpolation
 
@@ -133,7 +182,125 @@ Ranked by measured impact on the research objective:
   optimized beats baseline under loss holds on localhost; a WAN run
   would likely widen the margin.
 
-## 9. Practical conclusion
+## 9. Deep analysis: per-optimization decomposition (isolation matrix)
+
+The main matrix answers "optimized vs baseline". The isolation matrix
+(`tools/run_isolation.sh`, `tools/analyze.py --mode isolation`) answers
+"which optimization inside the optimized stack contributes how much?" by
+fixing the network at 100 ms added RTT and running five variants:
+
+1. `baseline` - TCP + text (reference)
+2. `optimized_raw` - UDP + binary, prediction and interpolation both off
+3. `optimized_noInterp` - UDP + binary + prediction
+4. `optimized_noPred` - UDP + binary + interpolation
+5. `optimized` - full stack
+
+`results_isolation/fig5_isolation_decomp.png` plots two bars per variant:
+authoritative ack latency (wire RTT) and perceived input-to-visible delay.
+
+Expected reading:
+
+- Ack latency is roughly flat across all five variants - it is governed
+  by the network and the server tick rate, not by the client stack.
+- Perceived delay is near zero for every variant in which prediction is
+  on, and equals ack latency for every variant in which prediction is
+  off. Prediction is therefore the sole contributor to the perceived-delay
+  gain; neither the transport choice nor interpolation nor binary framing
+  can hide the round-trip time on their own.
+- `optimized_raw` vs `optimized_noInterp` isolates prediction's effect in
+  isolation from interpolation. `optimized_noPred` vs `baseline` isolates
+  the combined effect of UDP + binary + interpolation (but not prediction).
+
+The report should cite the specific columns of
+`results_isolation/summary.csv` and present the findings as "prediction
+contributes X ms of perceived-delay reduction, interpolation contributes
+Y, binary transport contributes Z bandwidth".
+
+## 10. Deep analysis: packet-loss tolerance (loss sweep)
+
+The loss sweep (`tools/run_loss_sweep.sh`, `tools/analyze.py --mode loss`)
+holds latency at 100 ms and varies simulated loss across {0, 1, 3, 5, 10}%.
+
+`results_loss/fig9_loss_delay_tail.png` shows p50, p95, and p99 of
+`rtt_ms` as loss rises. Expected reading:
+
+- p50 stays near base RTT for both modes until loss is severe; the
+  optimised path's p50 is essentially insensitive to loss because a
+  dropped snapshot is superseded by the next one 50 ms later.
+- p95 and p99 diverge: the optimised path's tail grows gently (bounded
+  by the gap until the next snapshot, at most ~100 ms under broadcast
+  cadence) while the baseline's tail grows steeply (TCP head-of-line
+  blocking and retransmission timer backoff).
+- At 10 % loss the baseline p99 may exceed the optimised p99 by a
+  large margin - the exact number should be cited from
+  `results_loss/summary.csv`.
+
+`results_loss/fig10_snapshot_jitter_cv.png` shows snapshot arrival CV
+vs loss percentage. The optimised mode's CV rises with loss because
+dropped snapshots create gaps; this is precisely what the interpolation
+buffer is designed to absorb, and the visible effect on motion is
+negligible at the loss rates tested. In the baseline, TCP flattens
+the CV at the cost of widening the delay distribution (visible in fig9).
+
+## 11. Deep analysis: scaling with player count (scale sweep)
+
+The scale sweep (`tools/run_scale_sweep.sh`, `tools/analyze.py --mode scale`)
+runs the system on a clean network with {1, 2, 4, 6, 8} players.
+
+`results_scale/fig7_bytes_per_snapshot.png` plots the measured per-packet
+payload size vs N alongside the analytical prediction `7 + 22*N` for
+the optimized binary encoding (7 bytes of header + 22 bytes per
+`PLAYER_STATE`). The measured line should sit directly on or just below
+the analytical line (startup bias lowers the early-run average slightly).
+The baseline curve sits well above and has a less regular shape because
+the ASCII representation of each float varies in width.
+
+`results_scale/fig8_bandwidth_scaling.png` plots per-client bandwidth
+(kbps) vs N. Both modes grow linearly because the protocol is
+broadcast-to-all; the optimized line has a lower slope, and its slope
+matches the analytical `(7 + 22*N) * 20 Hz * 8 / 1000` prediction.
+
+The report should cite the exact ratio of baseline to optimized bandwidth
+at N=8 from `results_scale/summary.csv` - this is the cleanest possible
+demonstration of the binary-protocol payoff.
+
+## 12. Deep analysis: ack latency distributions (CDF - appendix)
+
+`results/fig6_ack_latency_cdf.png` plots the empirical CDF of per-input
+`rtt_ms` across the three latency conditions (A_clean, B_lat100,
+C_lat200) for both modes. **This is an appendix figure under the default
+matrix.** With zero loss and zero jitter, both modes produce near step
+functions that sit essentially on top of each other - that is the correct
+physical result (same wire, same cadence) but it is visually uninformative.
+
+The CDF concept earns its keep in the loss-sweep figure
+(`results_loss/fig9_loss_delay_tail.png`), where the right-tail divergence
+between TCP (retransmit) and UDP+prediction (absorb) is clearly visible
+as p95/p99 curves pulling apart.
+
+Use fig6 only if you are explicitly making the point "both modes have the
+same wire-level distribution" (which fig0 already makes more efficiently).
+Otherwise reference fig9 instead.
+
+## 13. Mapping between claims and figures
+
+When writing the report, each quantitative claim should cite one of
+the figures below. If a claim has no figure, it cannot be made.
+
+| Claim                                                              | Figure(s)            |
+| ------------------------------------------------------------------ | -------------------- |
+| Wire-equal, user-unequal (the thesis)                              | fig0                 |
+| Prediction hides added RTT                                         | fig0, fig1, fig4, fig5 |
+| Ack latency is network-bound, not stack-bound                      | fig0, fig1b          |
+| UDP+binary saves bandwidth                                         | fig2, fig7, fig8     |
+| Bandwidth scales linearly with N                                   | fig8                 |
+| Snapshot cadence stays near nominal (p50 = 50 ms)                  | fig3b                |
+| Gap tails double under loss for both modes                         | fig3b                |
+| Under loss, baseline's delay tail grows faster than optimized's    | fig9                 |
+| Snapshot delivery jitter is absorbed by interpolation              | fig3b, fig10         |
+| Prediction alone, not transport, is the source of responsiveness   | fig0, fig5           |
+
+## 14. Practical conclusion
 
 For the defined use case (2–8 player real-time shared arena with
 commodity internet latency), the optimized architecture is clearly

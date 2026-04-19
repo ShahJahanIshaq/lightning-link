@@ -1,6 +1,6 @@
 [server] UDP optimized mode listening on port 54322 (run=A_clean_optimized_rep1)
-[server] join 127.0.0.1:57411 -> id=1
-[server] join 127.0.0.1:61914 -> id=2
+[server] join 127.0.0.1:59314 -> id=1
+[server] join 127.0.0.1:61497 -> id=2
 [server] disconnect id=1
 [server] disconnect id=2
 [server] stopping.

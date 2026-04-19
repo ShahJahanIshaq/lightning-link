@@ -18,6 +18,8 @@ struct ClientConfig {
     std::uint64_t bot_seed  = 0xBADC0DEULL;
     double duration_sec     = 0.0;            // 0 = run until window closed or signal
     bool  headless          = false;          // force headless (no window) regardless of bot
+    bool  disable_prediction    = false;      // force prediction off at startup (ablation)
+    bool  disable_interpolation = false;      // force interpolation off at startup (ablation)
     LaggedSocketConfig lagcfg{};
 };
 

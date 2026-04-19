@@ -1,4 +1,4 @@
 [server] UDP optimized mode listening on port 54322 (run=B_lat100_optimized_rep1)
-[server] join 127.0.0.1:52137 -> id=1
-[server] join 127.0.0.1:63746 -> id=2
+[server] join 127.0.0.1:51730 -> id=1
+[server] join 127.0.0.1:57334 -> id=2
 [server] stopping.

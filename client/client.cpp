@@ -46,7 +46,11 @@ std::string make_log_path(const std::string& dir, const std::string& label,
     return oss.str();
 }
 
-InputSnapshot poll_keyboard() {
+InputSnapshot poll_keyboard(const sf::RenderWindow* w) {
+    // Guard: sf::Keyboard::isKeyPressed reads the OS-level keyboard state
+    // regardless of which window has focus. Without this gate, two clients
+    // on the same machine would both receive the same keystrokes.
+    if (w == nullptr || !w->hasFocus()) return InputSnapshot{};
     InputSnapshot s{};
     using K = sf::Keyboard::Key;
     if (sf::Keyboard::isKeyPressed(K::Left)  || sf::Keyboard::isKeyPressed(K::A)) s.mx = -1;
@@ -142,8 +146,19 @@ int run_optimized_client(const ClientConfig& cfg) {
     double        last_recon_err_px = 0.0;
 
     HudInputs hud{};
-    hud.mode_label = "optimized";
     hud.local_player_id = my_pid;
+    if (cfg.disable_prediction)    hud.prediction_enabled    = false;
+    if (cfg.disable_interpolation) hud.interpolation_enabled = false;
+    // Mode label encodes which optimizations are active for downstream analysis.
+    if (!hud.prediction_enabled && !hud.interpolation_enabled) {
+        hud.mode_label = "optimized_raw";
+    } else if (!hud.prediction_enabled) {
+        hud.mode_label = "optimized_noPred";
+    } else if (!hud.interpolation_enabled) {
+        hud.mode_label = "optimized_noInterp";
+    } else {
+        hud.mode_label = "optimized";
+    }
 
     BotInput bot(parse_bot_pattern(cfg.bot_pattern), cfg.bot_seed ^ my_pid);
 
@@ -215,8 +230,7 @@ int run_optimized_client(const ClientConfig& cfg) {
                         double perceived = hud.prediction_enabled
                             ? 0.0
                             : rtt_ms; // prediction disabled -> same as ack latency
-                        const char* mode_tag = hud.prediction_enabled
-                            ? "optimized_pred_on" : "optimized_pred_off";
+                        const char* mode_tag = hud.mode_label.c_str();
                         {
                             std::ostringstream row;
                             row << wall_time_ms() << ','
@@ -241,7 +255,8 @@ int run_optimized_client(const ClientConfig& cfg) {
 
         // Input at 60 Hz.
         if (now >= next_input_send) {
-            InputSnapshot in = has_bot ? bot.poll(elapsed_sec) : poll_keyboard();
+            InputSnapshot in = has_bot ? bot.poll(elapsed_sec)
+                                       : poll_keyboard(renderer.is_open() ? renderer.window() : nullptr);
 
             double dt = std::chrono::duration<double>(now - last_frame_time).count();
             if (dt <= 0.0 || dt > 0.25) dt = DT_SECONDS;
@@ -327,6 +342,7 @@ int run_optimized_client(const ClientConfig& cfg) {
                 }
             }
 
+            hud.window_focused = renderer.is_open() && renderer.window() && renderer.window()->hasFocus();
             hud.snapshots_received = snapshots_received;
             hud.inputs_sent = inputs_sent_total;
             hud.bytes_received = receiver.bytes_received_total();
