@@ -42,8 +42,6 @@ lightning-link/
 │   ├── run_all.sh           # one-shot: all four matrices + analysis
 │   └── analyze.py           # --mode main|isolation|loss|scale
 ├── docs/
-│   ├── project_specification.md    # verbatim mirror of the original spec
-│   ├── deviations.md               # deliberate improvements over the spec
 │   ├── architecture.md             # mermaid diagrams + source-to-figure index
 │   └── results_interpretation.md   # report scaffold, filled from measured data
 ├── experiments/           # main matrix raw CSVs
@@ -270,9 +268,6 @@ Run label, seed, client count, latency, and loss are all fixed by
   for TCP. TCP-native effects (head-of-line blocking under loss) are not
   re-simulated because the baseline mode at localhost does not exhibit them.
 - The prediction model has no rollback, lag compensation, or delta
-  reconciliation — by design, per the original spec.
+  reconciliation.
 - No WAN deployment, matchmaking, persistence, authentication, combat, or
-  projectile synchronisation. See the non-goals list in the specification.
-
-See `docs/deviations.md` for the full list of intentional deviations from
-the original specification.
+  projectile synchronisation.
